@@ -14,7 +14,7 @@ library(tidyverse)
 
 # Task
 
-- Create a random lightning algorithm, and visualize the result!
+- Crate a random lightning algorithm, and visualize the result!
 - The lightning should be a random walk from top to bottom.
 - At each step, there is a 1% chance of forking.
 - Each fork in itself is a new random walk.
