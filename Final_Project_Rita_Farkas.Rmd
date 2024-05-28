@@ -1,6 +1,6 @@
 ---
 title: "Final Project"
-author: "Rita Farka"
+author: "Rita Farkas"
 date: "2024-05-25"
 output: html_document
 ---
@@ -9,7 +9,7 @@ Netflix titles from Tidy Tuesday is used for this project. I will be exploring t
 
 ## Setting the environment
 
-```{r setup, include=FALSE}
+```{r setup}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
@@ -22,7 +22,7 @@ theme_set(theme_light())
 
 I also wanted to work with date-times and time-spans. I split the duration column into two new columns: duration and duration_units on spaces, and automatically converted the duration column to a numeric data type. Also worked only the year of the dates the movies and shows were added to Netflix, and needed a new column called mature to easily filter the data for only mature-rated titles, as I was more interested on this category of ratings as you can understand later.
 
-```{r Load}
+```{r Load, warning=FALSE, message=FALSE}
 library(lubridate)
 
 tt <- tt_load("2021-04-20")
