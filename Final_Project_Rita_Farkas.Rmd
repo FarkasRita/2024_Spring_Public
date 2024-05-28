@@ -1,0 +1,240 @@
+---
+title: "Final Project"
+author: "Rita Farka"
+date: "2024-05-25"
+output: html_document
+---
+
+Netflix titles from Tidy Tuesday is used for this project. I will be exploring the Movies and TV shows available on Netflix as of 2021.
+
+## Setting the environment
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytuesdayR)
+library(scales)
+theme_set(theme_light())
+```
+
+## Loading and cleaning the data
+
+I also wanted to work with date-times and time-spans. I split the duration column into two new columns: duration and duration_units on spaces, and automatically converted the duration column to a numeric data type. Also worked only the year of the dates the movies and shows were added to Netflix, and needed a new column called mature to easily filter the data for only mature-rated titles, as I was more interested on this category of ratings as you can understand later.
+
+```{r Load}
+library(lubridate)
+
+tt <- tt_load("2021-04-20")
+
+netflix_titles <- tt$netflix_titles %>%
+  separate(duration, c("duration", "duration_units"), sep = " ", convert = TRUE) %>%
+  mutate(date_added = mdy(date_added),
+         year_added = year(date_added)) %>%
+  mutate(mature = rating %in% c("TV-MA", "R", "NC-17"))
+```
+
+## Line plot for Netflix movies and shows created over time
+
+Created a line plot that shows how the proportion of Movies and TV Shows in the Netflix titles data set has changed over time, with data grouped into two-year intervals. It's calculated by dividing the count of titles by the total count of titles for each type.
+
+As we can see we have more movies that are little bit older than the shows are, but from the 2010 decade tv-shows became slightly more popular as more were added to Netflix than movies.
+
+```{r}
+netflix_titles %>%
+  count(year = release_year, type) %>%
+  group_by(type) %>%
+  mutate(percent = n / sum(n)) %>%
+  ggplot(aes(year, percent, color = type)) +
+  geom_line()
+```
+
+## Bar plot for genres and duration only looking at Netflix movies
+
+This code is creating a bar plot that shows the median duration of Netflix movies for each genre. Didn't want to include tv-shows, cause they differ in the number of seasons and in the duration of episodes from movies. I had to exclude "Movies" genre, as it is not a specific genre. I used median to make the longer movie genres pop, but as we can see, there is no surprising result: Children Movies, Documentaries and Stand-ups are shorter in average for obvious reasons, and Dramas, Actions and Classicals are slightly longer.
+
+```{r}
+summarize_titles <- function(tbl) {
+  tbl %>%
+    summarize(n = n(),
+              median_duration = median(duration),
+              median_year = median(release_year), .groups = "drop") %>%
+    arrange(desc(n))
+}
+
+netflix_titles %>%
+  separate_rows(listed_in, sep = ", ") %>%
+  group_by(type, genre = listed_in) %>%
+  summarize_titles() %>%
+  filter(type == "Movie") %>%
+  filter(genre != "Movies") %>%
+  mutate(genre = fct_reorder(genre, median_duration)) %>%
+  ggplot(aes(median_duration, genre)) +
+  geom_col()
+```
+
+## Area plot for rating visuals
+
+This code is creating an area plot that shows how the proportion of Movies and TV Shows of different ratings in the Netflix titles data set has changed over time, for movies and shows added in 2015 or later.I realized, that the big change was around 2015, when the streaming providers became more popular, so I filtered the year_added from 2015 to get a good visualization of our comparing area plot. Needed to lump together the least common ratings into a single "Other" category, keeping only the 5 most common ratings as separate categories. Separated panels for the two types.
+
+```{r}
+
+netflix_titles %>%
+  filter(year_added >= 2015) %>%
+  filter(!is.na(date_added), !is.na(rating)) %>%
+  mutate(rating = fct_lump(rating, 5)) %>%
+  ungroup() %>%
+  count(type, year_added, rating) %>%
+  group_by(type, year_added) %>%
+  mutate(percent = n / sum(n)) %>%
+  ggplot(aes(year_added, percent, fill = rating)) +
+  geom_area() +
+  facet_wrap(~ type)
+```
+
+## Bar plot for the countries contributing the most to films and shows according to Netflix
+
+This code is creating a bar plot that shows the count of Movies and TV Shows in the data set for each country where they were created, with data grouped into 15 most common countries that produce films and shows according to Netflix and an "Other" category for all other countries. What is interesting is that most countries are producing more movies than tv-shows, but asian countries are exactly the opposite. Are tv-shows more popular in asian countries than movies in general, or only according to Netflix?
+
+```{r}
+netflix_titles %>%
+  filter(!is.na(country)) %>%
+  count(country = fct_lump(country,15),
+        type,
+        sort = TRUE) %>%
+  mutate(country = fct_reorder(country, n)) %>%
+  ggplot(aes(n, country, fill = type)) +
+  geom_col()
+```
+
+## Plot that shows the percentage of mature content (rated as "R", "TV-MA", or "NC-17") for both Movies and TV Shows in different countries
+
+This shows the proportion of mature titles for each country, with the size of the points representing the total number of titles and error bars representing the 95% confidence interval. The position of the point on the x-axis represents the proportion of mature titles (rated as "R", "TV-MA", or "NC-17") in that country. The size of the point (n) represents the total number of titles in that country. The points are colored by the type of content (Movie or TV Show).
+
+I was curious where the mature movies and tv-shows are more popular and more produced than other ratings in cinematography. According to Netflix, in Spain they really produce higher percentage of mature content in both Movies and Tv-Shows categories for Netflix than other rated content. Furthermore, in South Korea their Netflix Movies are more likely to be considered mature than their Tv-shows. In Egypt mature films and movies are not that popular as it seems. Generally Movies(R) are more likely to be rated MATURE than Tv-Shows(TV-MA).
+
+```{r}
+
+netflix_titles %>%
+  filter(!is.na(rating), !is.na(country)) %>%
+  group_by(type, country = fct_lump(country, 9)) %>%
+  summarize(n_mature = sum(rating %in% c("R", "TV-MA", "NC-17")),
+            n = n(),
+            .groups = "drop") %>%
+  mutate(pct_mature = n_mature / n,
+         conf_low = qbeta(.025, n_mature + .5, n - n_mature + .5),
+         conf_high = qbeta(.975, n_mature + .5, n - n_mature + .5)) %>%
+  ggplot(aes(pct_mature, country, color = type)) +
+  geom_point(aes(size = n)) +
+  geom_errorbar(aes(xmin = conf_low, xmax = conf_high), width = .1) +
+  scale_x_continuous(labels = percent) +
+  expand_limits(x = 0) +
+  labs(x = "% of titles that are R/TV-MA")
+```
+
+## Odds of words used in description of a Movie and Tv-shows
+
+Analyzed the data frame to understand the specificity of words used in the descriptions of different genres to understand the language that is unique to the descriptions of each genre. I was looking for the top 10 words in each description. It is quite interesting, have a look at it.
+
+```{r}
+
+
+library(tidytext)
+library(snakecase)
+library(tidylo)
+
+# Unnesting the words from the description and remove stop words
+words_unnested <- netflix_titles %>%
+  unnest_tokens(word, description) %>%
+  anti_join(stop_words, by = "word")
+
+# Calculateing the log-odds of each word's specificity to each genre
+word_genre_log_odds <- words_unnested %>%
+  distinct(type, title, word, genre = listed_in) %>%
+  add_count(word, name = "word_total") %>%
+  filter(word_total >= 25) %>%
+  separate_rows(genre, sep = ", ") %>%
+  filter(fct_lump(genre, 9) != "Other") %>%
+  count(genre, word) %>%
+  bind_log_odds(genre, word, n)
+
+# Generating the plot
+word_genre_log_odds %>%
+  group_by(genre) %>%
+  top_n(10, log_odds_weighted) %>%
+  ungroup() %>%
+  mutate(word = reorder_within(word, log_odds_weighted, genre)) %>%
+  ggplot(aes(log_odds_weighted, word, fill = genre)) +
+  geom_col() +
+  facet_wrap(~ genre, scales = "free_y") +
+  scale_y_reordered() +
+  theme(legend.position = "none") +
+  labs(x = "Log-odds of word's specificity to genre",
+       y = "")
+```
+
+## Finally let's predict if a movie or a show has a mature rating based on the words that it uses in the description using Lasso regression, and also feature, director, cast, genre, country.
+
+With a text analysis on the data frame and then using Lasso regression to model the relationship between the features and a binary outcome variable:
+
+First I should preprocesses the data by counting the words in the descriptions of the titles, filtering out stop words, and creating a sparse matrix of features that includes both the word counts and other features such as director, cast, genre, and country.
+
+Then I used Lasso Regression: the function is used to fit a Lasso regression model to the data. Lasso (Least Absolute Shrinkage and Selection Operator) regression is a type of linear regression that uses shrinkage. Shrinkage is where data values are shrunk towards a central point, like the mean. The Lasso method performs L1 regularization, which adds a penalty equal to the absolute value of the magnitude of coefficients. This can result in some coefficients being shrunk to zero, effectively selecting a simpler model that does not include those coefficients.
+
+Then the code visualizes the coefficients of the Lasso regression model. With a bar plot I represented the effect of each feature on the likelihood of a title being rated as mature. The features are reordered based on their coefficients, so the plot shows the features that have the greatest positive and negative effect on the likelihood of a title being rated as TV-MA/R.
+
+In summary, I modeled the relationship between the words used in the descriptions of Netflix titles and other features, and whether or not the titles are rated as mature. If a term's estimate is minus, that term is likely to make the title (movie or show) not considered as mature. If it is positive, it is more likely that the term in the description is making the movie's rating considered as mature.
+
+For the last visualization I gathered the top feature_type, feature, director, cast, genre, country also, to show if it is making the movie or tv-show more or less likely to be considered as TV-MA/R.
+
+Overall we can see that Stand-up comedies, description words like drug, heist, tension, Spain as the producing country, Kathryn Hahn herself being in the movie or tv-show are more likely to make a film or show considered as mature content.\
+Oprah Winfrey as a tv-show host, words like poor and magical, children, faith, David Attenborough himself are less likely to cause a film or show to be in adult rated.
+
+```{r}
+word_ratings <- words_unnested %>%
+  count(type, title, rating, word) %>%
+  filter(!is.na(rating)) %>%
+  add_count(word, name = "word_total") %>%
+  filter(word_total >= 20)
+
+
+library(glmnet)
+library(broom)
+
+other_features <- netflix_titles %>%
+  select(title, director, cast, genre = listed_in, country) %>%
+  gather(feature_type, feature, director, cast, genre, country) %>%
+  filter(!is.na(feature)) %>%
+  separate_rows(feature, sep = ", ") %>%
+  mutate(feature_type = str_to_title(feature_type)) %>%
+  unite(feature, feature_type, feature, sep = ": ") %>%
+  add_count(feature, name = "feature_count") %>%
+  filter(feature_count >= 10)
+
+feature_matrix <- word_ratings %>%
+  mutate(feature = paste("Description:", word)) %>%
+  bind_rows(other_features) %>%
+  cast_sparse(title, feature)
+
+y <- netflix_titles$mature[match(rownames(feature_matrix), netflix_titles$title)]
+
+mod <- cv.glmnet(feature_matrix, y, family = "binomial")
+
+plot(mod)
+
+mod$glmnet.fit %>%
+  tidy() %>%
+  filter(lambda == mod$lambda.1se)
+
+mod$glmnet.fit %>%
+  tidy() %>%
+  separate(term, c("feature_type", "feature"), sep = ": ", fill = "right") %>%
+  filter(lambda == mod$lambda.1se) %>%
+  top_n(35, abs(estimate)) %>%
+  mutate(feature = fct_reorder(feature, estimate)) %>%
+  ggplot(aes(estimate, feature, fill = feature_type)) +
+  geom_col() +
+  labs(x = "Coefficient: does this make the title more likely to be considered mature?",
+       y = "",
+       fill = "Feature Type")
+```
